@@ -1,0 +1,18 @@
+/* Reset base */
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; }
+
+/* Scrollbar sidebar */
+.overflow-auto::-webkit-scrollbar { width: 5px; }
+.overflow-auto::-webkit-scrollbar-track { background: #f8f9fa; }
+.overflow-auto::-webkit-scrollbar-thumb { background: #ced4da; border-radius: 4px; }
+
+/* Stop cards hover */
+.stop-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.12) !important; }
+
+/* Badge purple (no existe en Bootstrap 5 por defecto) */
+.badge.bg-purple, span.badge[style*="#6f42c1"] { background-color: #6f42c1 !important; }
+
+/* Leaflet z-index fix dentro de flex */
+.leaflet-container { z-index: 0 !important; }
+
