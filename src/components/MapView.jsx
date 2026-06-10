@@ -1,8 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import L from "leaflet";
 import { stopTypes } from "../data/waypoints";
+import { ROUTE_LAYERS } from "../data/routesData";
 
-// Fix default icon paths for Vite
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
@@ -10,7 +10,21 @@ L.Icon.Default.mergeOptions({
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
+const ROUTE_STYLES = {
+  car: {
+    outline: { color: "#fff", weight: 8, opacity: 0.85 },
+    line: { color: "#e85d04", weight: 4.5, opacity: 1 },
+  },
+  boat: {
+    outline: { color: "#fff", weight: 8, opacity: 0.85 },
+    line: { color: "#0077cc", weight: 4.5, opacity: 1 },
+  },
+};
+
+const ICON_CACHE = {};
+
 function makeIcon(type) {
+  if (ICON_CACHE[type]) return ICON_CACHE[type];
   const t = stopTypes[type] || stopTypes.stop;
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="36" height="44" viewBox="0 0 36 44">
@@ -20,142 +34,121 @@ function makeIcon(type) {
       </text>
       <polygon points="14,32 22,32 18,42" fill="${t.color}"/>
     </svg>`;
-
-  return L.divIcon({
+  ICON_CACHE[type] = L.divIcon({
     className: "",
     html: svg,
     iconSize: [36, 44],
     iconAnchor: [18, 42],
     popupAnchor: [0, -44],
   });
+  return ICON_CACHE[type];
 }
 
-export default function MapView({ geojson, geojson2, geojson3, geojson4, geojson5, waypoints, selectedStop, onSelectStop, lang, t }) {
+function buildPopup(wp, t) {
+  const wpT = t?.waypoints?.[wp.id];
+  const displayName = wpT?.name || wp.name;
+  const displayDesc = wpT?.description || wp.description;
+  const photoHtml = wp.image
+    ? `<img src="${wp.image}" style="width:100%;max-height:110px;object-fit:cover;border-radius:6px;margin-bottom:6px"
+         onerror="this.style.display='none'" loading="lazy" />`
+    : "";
+  return `<div style="min-width:180px;max-width:220px">
+    ${photoHtml}
+    <b style="font-size:0.95rem">${displayName}</b><br/>
+    <span style="font-size:0.8rem;color:#666">${displayDesc}</span>
+  </div>`;
+}
+
+function drawRoutes(parentLayer, renderer) {
+  const boundsList = [];
+  for (const route of ROUTE_LAYERS) {
+    if (!route.latlngs.length) continue;
+    const styles = ROUTE_STYLES[route.style];
+    const layers = [];
+    if (styles.outline) {
+      layers.push(L.polyline(route.latlngs, { ...styles.outline, renderer, smoothFactor: 1.5, noClip: true }));
+    }
+    layers.push(L.polyline(route.latlngs, { ...styles.line, renderer, smoothFactor: 1.5, noClip: true }));
+    L.layerGroup(layers).addTo(parentLayer);
+    boundsList.push(L.latLngBounds(route.latlngs));
+  }
+  return boundsList;
+}
+
+export default function MapView({ waypoints, selectedStop, onSelectStop, lang, t }) {
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const markersRef = useRef([]);
-  const routeLayerRef = useRef(null);
-  const routeLayer2Ref = useRef(null);
-  const routeLayer3Ref = useRef(null);
-  const routeLayer4Ref = useRef(null);
-  const routeLayer5Ref = useRef(null);
+  const tRef = useRef(t);
 
-  // Init map
+  tRef.current = t;
+
+  const getWaypointBounds = useCallback(() => {
+    return L.latLngBounds(waypoints.map((wp) => [wp.coords[1], wp.coords[0]]));
+  }, [waypoints]);
+
   useEffect(() => {
     if (mapInstanceRef.current) return;
-    const map = L.map(mapRef.current, { zoomControl: true });
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+
+    const map = L.map(mapRef.current, {
+      zoomControl: true,
+      preferCanvas: true,
+      zoomAnimation: true,
+      fadeAnimation: false,
+      inertia: true,
+    });
+
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OSM</a> © <a href="https://carto.com/">CARTO</a>',
+      subdomains: "abcd",
       maxZoom: 19,
+      maxNativeZoom: 18,
+      updateWhenZooming: false,
+      updateWhenIdle: true,
+      keepBuffer: 1,
     }).addTo(map);
+
+    const renderer = L.canvas({ padding: 0.5 });
+    const routesLayer = L.layerGroup().addTo(map);
+    const routeBounds = drawRoutes(routesLayer, renderer);
+
+    const wpBounds = getWaypointBounds();
+    const allBounds = routeBounds.length
+      ? routeBounds.reduce((acc, b) => acc.extend(b), wpBounds)
+      : wpBounds;
+    map.fitBounds(allBounds, { padding: [40, 40], animate: false });
+
     mapInstanceRef.current = map;
-  }, []);
-
-  // Render rutas — espera a que todas estén listas para hacer fitBounds correcto
-  useEffect(() => {
-    const map = mapInstanceRef.current;
-    if (!map) return;
-
-    if (geojson) {
-      if (routeLayerRef.current) routeLayerRef.current.remove();
-      const outline1 = L.geoJSON(geojson, { style: { color: "#fff", weight: 9, opacity: 0.8 } }).addTo(map);
-      const line1    = L.geoJSON(geojson, { style: { color: "#e85d04", weight: 5, opacity: 1 } }).addTo(map);
-      routeLayerRef.current = L.layerGroup([outline1, line1]);
-      routeLayerRef.current._bounds = line1.getBounds();
-    }
-
-    if (geojson2) {
-      if (routeLayer2Ref.current) routeLayer2Ref.current.remove();
-      const outline2 = L.geoJSON(geojson2, { style: { color: "#fff", weight: 9, opacity: 0.8 } }).addTo(map);
-      const line2    = L.geoJSON(geojson2, { style: { color: "#0077cc", weight: 5, opacity: 1 } }).addTo(map);
-      routeLayer2Ref.current = L.layerGroup([outline2, line2]);
-      routeLayer2Ref.current._bounds = line2.getBounds();
-    }
-
-    if (geojson3) {
-      if (routeLayer3Ref.current) routeLayer3Ref.current.remove();
-      // Tramo estimado: punteado azul
-      const line3 = L.geoJSON(geojson3, {
-        style: { color: "#0077cc", weight: 4, opacity: 0.85, dashArray: "10 8" },
-      }).addTo(map);
-      routeLayer3Ref.current = line3;
-      routeLayer3Ref.current._bounds = line3.getBounds();
-    }
-
-    if (geojson4) {
-      if (routeLayer4Ref.current) routeLayer4Ref.current.remove();
-      const outline4 = L.geoJSON(geojson4, { style: { color: "#fff", weight: 9, opacity: 0.8 } }).addTo(map);
-      const line4    = L.geoJSON(geojson4, { style: { color: "#0077cc", weight: 5, opacity: 1 } }).addTo(map);
-      routeLayer4Ref.current = L.layerGroup([outline4, line4]);
-      routeLayer4Ref.current._bounds = line4.getBounds();
-    }
-
-    if (geojson5) {
-      if (routeLayer5Ref.current) routeLayer5Ref.current.remove();
-      const outline5 = L.geoJSON(geojson5, { style: { color: "#fff", weight: 9, opacity: 0.8 } }).addTo(map);
-      const line5    = L.geoJSON(geojson5, { style: { color: "#0077cc", weight: 5, opacity: 1 } }).addTo(map);
-      routeLayer5Ref.current = L.layerGroup([outline5, line5]);
-      routeLayer5Ref.current._bounds = line5.getBounds();
-    }
-
-    // fitBounds incluyendo todas las rutas
-    const bounds = [
-      routeLayerRef.current?._bounds,
-      routeLayer2Ref.current?._bounds,
-      routeLayer3Ref.current?._bounds,
-      routeLayer4Ref.current?._bounds,
-      routeLayer5Ref.current?._bounds,
-    ].filter(Boolean);
-    if (bounds.length > 0) {
-      const combined = bounds.reduce((acc, b) => acc.extend(b));
-      map.fitBounds(combined, { padding: [40, 40] });
-    }
-  }, [geojson, geojson2, geojson3, geojson4, geojson5]);
-
-  // Render waypoint markers
-  useEffect(() => {
-    const map = mapInstanceRef.current;
-    if (!map) return;
-    markersRef.current.forEach((m) => m.remove());
-    markersRef.current = [];
 
     waypoints.forEach((wp) => {
       const [lng, lat] = wp.coords;
       const marker = L.marker([lat, lng], { icon: makeIcon(wp.type) });
-
-      const wpT = t?.waypoints?.[wp.id];
-      const displayName = wpT?.name || wp.name;
-      const displayDesc = wpT?.description || wp.description;
-
-      const photoHtml = wp.image
-        ? `<img src="${wp.image}" style="width:100%;max-height:110px;object-fit:cover;border-radius:6px;margin-bottom:6px"
-             onerror="this.style.display='none'" />`
-        : "";
-
-      marker.bindPopup(
-        `<div style="min-width:180px;max-width:220px">
-          ${photoHtml}
-          <b style="font-size:0.95rem">${displayName}</b><br/>
-          <span style="font-size:0.8rem;color:#666">${displayDesc}</span>
-        </div>`,
-        { maxWidth: 240 }
-      );
-
+      marker.bindPopup(() => buildPopup(wp, tRef.current), { maxWidth: 240 });
       marker.on("click", () => onSelectStop(wp));
       marker.addTo(map);
-      markersRef.current.push(marker);
+      markersRef.current.push({ marker, wp });
     });
-  }, [waypoints, onSelectStop, lang, t]);
+    return () => {
+      map.remove();
+      mapInstanceRef.current = null;
+      markersRef.current = [];
+    };
+  }, [getWaypointBounds, onSelectStop, waypoints]);
 
-  // Fly to selected stop
+  useEffect(() => {
+    markersRef.current.forEach(({ marker, wp }) => {
+      marker.setPopupContent(buildPopup(wp, t));
+    });
+  }, [lang, t, waypoints]);
+
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map || !selectedStop) return;
     const [lng, lat] = selectedStop.coords;
     map.flyTo([lat, lng], 14, { duration: 1.2 });
-    const marker = markersRef.current.find((_, i) => waypoints[i]?.id === selectedStop.id);
-    if (marker) marker.openPopup();
-  }, [selectedStop, waypoints]);
+    const entry = markersRef.current.find(({ wp }) => wp.id === selectedStop.id);
+    if (entry) entry.marker.openPopup();
+  }, [selectedStop]);
 
   return (
     <div
