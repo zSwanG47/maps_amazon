@@ -1,15 +1,20 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import "./App.css";
 
-import MapView from "./components/MapView";
 import Sidebar from "./components/Sidebar";
 import { waypoints } from "./data/waypoints";
 import { translations } from "./data/i18n";
-import { routeStats } from "./data/routesData";
+import { routeStats } from "./data/routeStats";
+
+const MapView = lazy(() => import("./components/MapView"));
+
+function isMobileView() {
+  return window.matchMedia("(max-width: 768px), (pointer: coarse)").matches;
+}
 
 export default function App() {
   const [selectedStop, setSelectedStop] = useState(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(!isMobileView());
   const [lang, setLang] = useState("es");
   const t = translations[lang];
 
@@ -22,7 +27,7 @@ export default function App() {
     <div className="app-root d-flex flex-column" style={{ height: "100vh", overflow: "hidden" }}>
       <nav className="app-navbar navbar navbar-dark px-3 py-2 flex-shrink-0">
         <div className="app-brand">
-          <img src="/images/logo.jpg" alt="Amazon Experience" className="app-logo" width="38" height="38" decoding="async" />
+          <img src="/images/logo.jpg" alt="Amazon Experience" className="app-logo" width="38" height="38" decoding="async" loading="eager" />
           <div className="app-brand-text">
             <span className="app-brand-title">Amazon Experience</span>
             <span className="app-brand-sub">{t.subtitle}</span>
@@ -75,13 +80,15 @@ export default function App() {
         </div>
 
         <div className="flex-grow-1 position-relative">
-          <MapView
-            waypoints={waypoints}
-            selectedStop={selectedStop}
-            onSelectStop={handleSelectStop}
-            lang={lang}
-            t={t}
-          />
+          <Suspense fallback={<div className="map-loading">Cargando mapa…</div>}>
+            <MapView
+              waypoints={waypoints}
+              selectedStop={selectedStop}
+              onSelectStop={handleSelectStop}
+              lang={lang}
+              t={t}
+            />
+          </Suspense>
 
           <button
             type="button"
