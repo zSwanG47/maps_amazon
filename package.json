@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "simplify-routes": "node scripts/simplify-geojson.cjs",
-    "restore-route3": "node scripts/restore-route3.cjs"
+    "restore-route3": "node scripts/restore-route3.cjs",
+    "build-lupuna": "node scripts/build-lupuna-route.cjs"
   },
   "dependencies": {
     "bootstrap": "^5.3.8",

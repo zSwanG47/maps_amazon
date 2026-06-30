@@ -1,9 +1,8 @@
 import { simplifyLineString } from "./simplify";
 
-const ROUTE_FILES = [
+const DEFAULT_ROUTE_FILES = [
   { file: "route.geojson", style: "car" },
   { file: "route2.geojson", style: "boat" },
-  { file: "route3.geojson", style: "boat" },
   { file: "route5.geojson", style: "boat" },
   { file: "routeYanayacu.geojson", style: "boat" },
 ];
@@ -17,12 +16,12 @@ function extractCoords(geojson) {
 }
 
 /** Carga rutas por fetch (no bloquea el JS inicial). Simplifica más en móvil. */
-export async function loadRouteLayers({ mobile = false } = {}) {
+export async function loadRouteLayers({ mobile = false, routeFiles = DEFAULT_ROUTE_FILES } = {}) {
   const maxPoints = mobile ? 80 : 250;
   const base = import.meta.env.BASE_URL;
 
   const layers = await Promise.all(
-    ROUTE_FILES.map(async ({ file, style }) => {
+    routeFiles.map(async ({ file, style }) => {
       const res = await fetch(`${base}${file}`);
       if (!res.ok) return null;
       const geojson = await res.json();

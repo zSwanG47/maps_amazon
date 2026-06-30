@@ -1,26 +1,39 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import "./App.css";
 
 import Sidebar from "./components/Sidebar";
-import { waypoints } from "./data/waypoints";
+import BottomSheet from "./components/BottomSheet";
+import MapLegend from "./components/MapLegend";
 import { translations } from "./data/i18n";
-import { routeStats } from "./data/routeStats";
+import { getTour } from "./data/tours";
+import { isMobileView } from "./utils/viewport";
 
 const MapView = lazy(() => import("./components/MapView"));
 
-function isMobileView() {
-  return window.matchMedia("(max-width: 768px), (pointer: coarse)").matches;
-}
-
-export default function App() {
+export default function App({ tourId = "eldorado" }) {
+  const tour = getTour(tourId);
+  const { waypoints, routes, routeStats } = tour;
+  const [mobile, setMobile] = useState(() => isMobileView());
   const [selectedStop, setSelectedStop] = useState(null);
-  const [sidebarOpen, setSidebarOpen] = useState(!isMobileView());
+  const [sidebarOpen, setSidebarOpen] = useState(() => !isMobileView());
   const [lang, setLang] = useState("es");
-  const t = translations[lang];
+  const t = translations[lang][tourId] ?? translations[lang].eldorado;
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const sync = () => {
+      const next = mq.matches;
+      setMobile(next);
+      if (next) setSidebarOpen(false);
+    };
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
 
   const handleSelectStop = (wp) => {
     setSelectedStop(wp);
-    if (window.innerWidth < 768) setSidebarOpen(true);
+    if (!mobile) setSidebarOpen(true);
   };
 
   return (
@@ -35,10 +48,12 @@ export default function App() {
         </div>
 
         <div className="d-flex align-items-center gap-2 gap-md-3">
-          <span className="live-badge">
-            <span className="live-dot" />
-            <span className="label-text">{t.live}</span>
-          </span>
+          {!mobile && (
+            <span className="live-badge">
+              <span className="live-dot" />
+              <span className="label-text">{t.live}</span>
+            </span>
+          )}
 
           <div className="lang-toggle" role="group" aria-label="Language">
             <button
@@ -57,47 +72,66 @@ export default function App() {
             </button>
           </div>
 
-          <button
-            type="button"
-            className="btn btn-sm btn-outline-light d-md-none border-0"
-            onClick={() => setSidebarOpen((v) => !v)}
-            aria-label={sidebarOpen ? t.hide : t.show}
-          >
-            <i className={`bi ${sidebarOpen ? "bi-x-lg" : "bi-list"}`}></i>
-          </button>
+          {!mobile && (
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-light d-md-none border-0"
+              onClick={() => setSidebarOpen((v) => !v)}
+              aria-label={sidebarOpen ? t.hide : t.show}
+            >
+              <i className={`bi ${sidebarOpen ? "bi-x-lg" : "bi-list"}`}></i>
+            </button>
+          )}
         </div>
       </nav>
 
       <div className="d-flex flex-grow-1 overflow-hidden position-relative">
-        <div className={`sidebar-panel ${sidebarOpen ? "open" : "closed"}`}>
-          <Sidebar
-            waypoints={waypoints}
-            selectedStop={selectedStop}
-            onSelectStop={handleSelectStop}
-            routeStats={routeStats}
-            t={t}
-          />
-        </div>
+        {!mobile && (
+          <div className={`sidebar-panel ${sidebarOpen ? "open" : "closed"}`}>
+            <Sidebar
+              waypoints={waypoints}
+              selectedStop={selectedStop}
+              onSelectStop={handleSelectStop}
+              routeStats={routeStats}
+              t={t}
+            />
+          </div>
+        )}
 
         <div className="flex-grow-1 position-relative">
           <Suspense fallback={<div className="map-loading">Cargando mapa…</div>}>
             <MapView
               waypoints={waypoints}
+              routes={routes}
               selectedStop={selectedStop}
               onSelectStop={handleSelectStop}
               lang={lang}
               t={t}
+              mobile={mobile}
             />
           </Suspense>
 
-          <button
-            type="button"
-            className="sidebar-toggle-btn d-none d-md-inline-flex"
-            onClick={() => setSidebarOpen((v) => !v)}
-          >
-            <i className={`bi ${sidebarOpen ? "bi-chevron-double-left" : "bi-chevron-double-right"}`}></i>
-            {sidebarOpen ? t.hide : t.show}
-          </button>
+          {mobile && !selectedStop && <MapLegend t={t} />}
+
+          {mobile && selectedStop && (
+            <BottomSheet
+              waypoint={selectedStop}
+              waypoints={waypoints}
+              onClose={() => setSelectedStop(null)}
+              t={t}
+            />
+          )}
+
+          {!mobile && (
+            <button
+              type="button"
+              className="sidebar-toggle-btn d-none d-md-inline-flex"
+              onClick={() => setSidebarOpen((v) => !v)}
+            >
+              <i className={`bi ${sidebarOpen ? "bi-chevron-double-left" : "bi-chevron-double-right"}`}></i>
+              {sidebarOpen ? t.hide : t.show}
+            </button>
+          )}
         </div>
       </div>
     </div>
